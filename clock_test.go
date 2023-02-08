@@ -1,6 +1,7 @@
 package clock
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sync"
@@ -648,6 +649,49 @@ func TestMock_ReentrantDeadlock(t *testing.T) {
 
 	mockedClock.Add(15 * time.Second)
 	mockedClock.Add(15 * time.Second)
+}
+
+func TestMock_AwaitTimers(t *testing.T) {
+	m := NewMock()
+	doneChan := make(chan bool)
+	go func() {
+		m.Sleep(5 * time.Second)
+		doneChan <- true
+	}()
+	go func() {
+		// do a real sleep before the fake sleep to delay the timer scheduling
+		time.Sleep(500 * time.Millisecond)
+		m.Sleep(5 * time.Second)
+		doneChan <- true
+	}()
+	err := m.AwaitTimers(2, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// If we didn't await above, the second goroutine wouldn't
+	// have reached Sleep yet and this Add
+	// call wouldn't wake it up.
+	m.Add(10 * time.Second)
+	for i := 0; i < 2; i++ {
+		select {
+		case <-doneChan:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timeout")
+		}
+	}
+
+	// NumTimers should be zero now, since the two timers have elapsed.
+	if nTimers := m.NumTimers(); nTimers != 0 {
+		t.Errorf("unexpected NumTimers response: want 0, got %d", nTimers)
+	}
+}
+
+func TestMock_AwaitTimers_Timeout(t *testing.T) {
+	m := NewMock()
+	err := m.AwaitTimers(10, 10*time.Millisecond)
+	if err != context.DeadlineExceeded {
+		t.Errorf("unexpected error: want %q, got %q", context.DeadlineExceeded, err)
+	}
 }
 
 func warn(v ...interface{})              { fmt.Fprintln(os.Stderr, v...) }
