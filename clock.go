@@ -126,6 +126,16 @@ func (m *Mock) Set(t time.Time) {
 	gosched()
 }
 
+// NumTimers returns the number of timers currently in the mock clock's queue.
+// This can be used in testing to check that any expected goroutines have
+// created their timers, started their sleeps, etc. so that the test
+// can safely call Add or Set.
+func (m *Mock) NumTimers() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.timers)
+}
+
 // runNextTimer executes the next timer in chronological order and moves the
 // current time to the timer's next tick time. The next time is not executed if
 // its next time is after the max time. Returns true if a timer was executed.
